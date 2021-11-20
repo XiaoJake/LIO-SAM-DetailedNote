@@ -224,7 +224,7 @@ public:
         pubLaserCloudSurround       = nh.advertise<sensor_msgs::PointCloud2>("lio_sam/mapping/map_global", 1);
         // 发布激光里程计，rviz中表现为坐标轴
         pubLaserOdometryGlobal      = nh.advertise<nav_msgs::Odometry> ("lio_sam/mapping/odometry", 1);
-        // 发布激光里程计，它与上面的激光里程计基本一样，只是roll、pitch用imu数据加权平均了一下，z做了限制
+        // 发布激光里程计，它与上面的激光里程计基本一样，只是roll、pitch用imu数据加权平均了一下
         pubLaserOdometryIncremental = nh.advertise<nav_msgs::Odometry> ("lio_sam/mapping/odometry_incremental", 1);
         // 发布激光里程计路径，rviz中表现为载体的运行轨迹
         pubPath                     = nh.advertise<nav_msgs::Path>("lio_sam/mapping/path", 1);
@@ -1704,9 +1704,9 @@ public:
         }
 
         // 更新当前帧位姿的roll, pitch, z坐标；因为是小车，roll、pitch是相对稳定的，不会有很大变动，一定程度上可以信赖imu的数据，z是进行高度约束
-        transformTobeMapped[0] = constraintTransformation(transformTobeMapped[0], rotation_tollerance);
-        transformTobeMapped[1] = constraintTransformation(transformTobeMapped[1], rotation_tollerance);
-        transformTobeMapped[5] = constraintTransformation(transformTobeMapped[5], z_tollerance);
+        transformTobeMapped[0] = constraintTransformation(transformTobeMapped[0], rotation_tolerance);
+        transformTobeMapped[1] = constraintTransformation(transformTobeMapped[1], rotation_tolerance);
+        transformTobeMapped[5] = constraintTransformation(transformTobeMapped[5], z_tolerance);
 
         // 当前帧位姿
         incrementalOdometryAffineBack = trans2Affine3f(transformTobeMapped);
@@ -2087,6 +2087,7 @@ public:
             float x, y, z, roll, pitch, yaw;
             pcl::getTranslationAndEulerAngles (increOdomAffine, x, y, z, roll, pitch, yaw);
 
+            // 对激光里程计的roll,pitch结合imu数据做球面线性插值
             if (cloudInfo.imuAvailable == true)
             {
                 if (std::abs(cloudInfo.imuPitchInit) < 1.4)
