@@ -1118,7 +1118,7 @@ public:
         for (int i = 0; i < (int)pointSearchInd.size(); ++i)
         {
             int id = pointSearchInd[i];
-            // 加入相邻关键帧位姿集合中
+            // 加入相邻关键帧位姿集合中(注意这里存的只是每个关键帧的位姿点,是很多个小point,还不是关键帧的点云集合)
             surroundingKeyPoses->push_back(cloudKeyPoses3D->points[id]);
         }
 
@@ -1160,6 +1160,7 @@ public:
 
             // 相邻关键帧索引
             int thisKeyInd = (int)cloudToExtract->points[i].intensity;
+            // 如果是下面的else中计算过的,就是直接取用,省去再次计算的过程
             if (laserCloudMapContainer.find(thisKeyInd) != laserCloudMapContainer.end())
             {
                 *laserCloudCornerFromMap += laserCloudMapContainer[thisKeyInd].first;
@@ -1177,8 +1178,7 @@ public:
 
         }
 
-        // ?: 每一个关键帧其实都已经是被降采样过一次了(FeatureExtraction.cpp里最后发出前),基于降采样之后的点云再次降采样 这是否不妥?
-        //    降采样应该是基于真实的点云才有意义, 我认为应该以当前关键帧集合的原始点云来降采样
+        // ?  仍然是连续降采样的问题
         // 降采样局部角点map
         downSizeFilterCorner.setInputCloud(laserCloudCornerFromMap);
         downSizeFilterCorner.filter(*laserCloudCornerFromMapDS);
@@ -1221,8 +1221,11 @@ public:
     */
     void downsampleCurrentScan()
     {
-    // ?: 这里依然存在重复降采样的问题
+        // ?: 每一帧其实都已经是被降采样过一次了(FeatureExtraction.cpp里最后发出前),基于降采样之后的点云再次降采样 这是否不妥?
+        //    降采样应该是基于真实的点云才有意义, 我认为应该以当前关键帧集合的原始点云来降采样 或者 不要做2次降采样,直接取用
+    
         // 当前激光帧角点集合降采样
+        // ?: 角点特征本来就少,还有必要降采样吗? 或者可以给一个降采样更小的参数?
         laserCloudCornerLastDS->clear();
         downSizeFilterCorner.setInputCloud(laserCloudCornerLast);
         downSizeFilterCorner.filter(*laserCloudCornerLastDS);
@@ -1240,6 +1243,7 @@ public:
     */
     void updatePointAssociateToMap()
     {
+        // 该变量用于 pointAssociateToMap( 函数中
         transPointAssociateToMap = trans2Affine3f(transformTobeMapped);
     }
 
@@ -1273,6 +1277,7 @@ public:
             cv::Mat matV1(3, 3, CV_32F, cv::Scalar::all(0));
 
             // 要求距离都小于1m
+            // tips: kd树中的结果已经是按照从小到大排序的,所以只需检查最后点的距离是否满足小于1m即可
             if (pointSearchSqDis[4] < 1.0) {
                 // 计算5个点的均值坐标，记为中心点
                 float cx = 0, cy = 0, cz = 0;
@@ -1297,7 +1302,7 @@ public:
                 }
                 a11 /= 5; a12 /= 5; a13 /= 5; a22 /= 5; a23 /= 5; a33 /= 5;
 
-                // 构建协方差矩阵
+                // 构建协方差矩阵 注意根据这里协方差矩阵的性质: a21=a12 a31=a13 a32=a23
                 matA1.at<float>(0, 0) = a11; matA1.at<float>(0, 1) = a12; matA1.at<float>(0, 2) = a13;
                 matA1.at<float>(1, 0) = a12; matA1.at<float>(1, 1) = a22; matA1.at<float>(1, 2) = a23;
                 matA1.at<float>(2, 0) = a13; matA1.at<float>(2, 1) = a23; matA1.at<float>(2, 2) = a33;
@@ -1324,21 +1329,21 @@ public:
                                     + ((x0 - x1)*(z0 - z2) - (x0 - x2)*(z0 - z1)) * ((x0 - x1)*(z0 - z2) - (x0 - x2)*(z0 - z1))
                                     + ((y0 - y1)*(z0 - z2) - (y0 - y2)*(z0 - z1)) * ((y0 - y1)*(z0 - z2) - (y0 - y2)*(z0 - z1)));
 
-                    // line_12，底边边长
+                    // line_12，三角形底边边长
                     float l12 = sqrt((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2) + (z1 - z2)*(z1 - z2));
-
+                    // a012 / l12 = 三角形的高,也就是点到直线的距离,"点到直线构成的向量"的模长
+                    float ld2 = a012 / l12;
+                    
+                // 计算残差下降方向 且单位化以便于控制迭代步长
                     // 两次叉积，得到点到直线的垂线段单位向量，x分量，下面同理
                     float la = ((y1 - y2)*((x0 - x1)*(y0 - y2) - (x0 - x2)*(y0 - y1))
-                              + (z1 - z2)*((x0 - x1)*(z0 - z2) - (x0 - x2)*(z0 - z1))) / a012 / l12;
+                              + (z1 - z2)*((x0 - x1)*(z0 - z2) - (x0 - x2)*(z0 - z1))) / ld2;
 
                     float lb = -((x1 - x2)*((x0 - x1)*(y0 - y2) - (x0 - x2)*(y0 - y1))
-                               - (z1 - z2)*((y0 - y1)*(z0 - z2) - (y0 - y2)*(z0 - z1))) / a012 / l12;
+                               - (z1 - z2)*((y0 - y1)*(z0 - z2) - (y0 - y2)*(z0 - z1))) / ld2;
 
                     float lc = -((x1 - x2)*((x0 - x1)*(z0 - z2) - (x0 - x2)*(z0 - z1))
-                               + (y1 - y2)*((y0 - y1)*(z0 - z2) - (y0 - y2)*(z0 - z1))) / a012 / l12;
-
-                    // 三角形的高，也就是点到直线距离
-                    float ld2 = a012 / l12;
+                               + (y1 - y2)*((y0 - y1)*(z0 - z2) - (y0 - y2)*(z0 - z1))) / ld2;
 
                     // 距离越大，s越小，是个距离惩罚因子（权重）
                     float s = 1 - 0.9 * fabs(ld2);// ?: 如何保证s不为负数
@@ -1350,6 +1355,7 @@ public:
                     // 点到直线距离
                     coeff.intensity = s * ld2;
 
+                    // ? 意思是点到直线的距离接近1米也当做正常值吗
                     if (s > 0.1) {
                         // 当前激光帧角点，加入匹配集合中
                         laserCloudOriCornerVec[i] = pointOri;

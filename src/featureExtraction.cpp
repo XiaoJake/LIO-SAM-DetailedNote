@@ -144,7 +144,7 @@ public:
         int cloudSize = extractedCloud->points.size();
         for (int i = 5; i < cloudSize - 5; i++)
         {
-            // 用当前激光点前后5个点计算当前点的曲率，平坦位置处曲率较小，角点处曲率较大；这个方法很简单但有效
+            // 用当前激光点前后5个点做差求和,计算当前点的曲率，平坦位置处曲率较小，角点处曲率较大；这个方法很简单但有效
             float diffRange = cloudInfo.pointRange[i-5] + cloudInfo.pointRange[i-4]
                             + cloudInfo.pointRange[i-3] + cloudInfo.pointRange[i-2]
                             + cloudInfo.pointRange[i-1] - cloudInfo.pointRange[i] * 10
@@ -152,7 +152,7 @@ public:
                             + cloudInfo.pointRange[i+3] + cloudInfo.pointRange[i+4]
                             + cloudInfo.pointRange[i+5];            
 
-            // 距离差值平方作为曲率
+            // 距离差值和的平方作为曲率
             cloudCurvature[i] = diffRange*diffRange;
 
             cloudNeighborPicked[i] = 0;
@@ -234,7 +234,11 @@ public:
             for (int j = 0; j < 6; j++)
             {
                 // 每段点云的起始、结束索引；startRingIndex为扫描线起始第5个激光点在一维数组中的索引
+                // 每个分段的起始点索引和末尾点索引的计算,看起来复杂,实际变形一下就好理解 
+                // 其中 (endRingIndex - startRingIndex) 为一个固定常量,记为delta,代表这根ring有多少个点,此处为1800
+                // 分段起始点索引: startRingIndex + j*(delta/6)
                 int sp = (cloudInfo.startRingIndex[i] * (6 - j) + cloudInfo.endRingIndex[i] * j) / 6;
+                // 分段末尾点索引: startRingIndex + (j+1)*(delta/6) -1
                 int ep = (cloudInfo.startRingIndex[i] * (5 - j) + cloudInfo.endRingIndex[i] * (j + 1)) / 6 - 1;
 
                 if (sp >= ep)
@@ -318,7 +322,8 @@ public:
                     }
                 }
 
-                // 平面点和未被处理的点，都认为是平面点，加入平面点云集合
+                // 平面点和未被处理的点，都认为是平面点，加入平面点云集合(所以平面点集会比较多)
+                // ?: 这样子做和 把角点以外的点都当做平面点 有啥区别? 不需要进行平面点的计算了
                 for (int k = sp; k <= ep; k++)
                 {
                     if (cloudLabel[k] <= 0){
@@ -327,7 +332,7 @@ public:
                 }
             }
 
-            // 平面点云降采样
+            // 由于平面点会比较多,所以要再降采样一下
             surfaceCloudScanDS->clear();
             downSizeFilter.setInputCloud(surfaceCloudScan);
             downSizeFilter.filter(*surfaceCloudScanDS);

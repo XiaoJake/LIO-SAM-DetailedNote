@@ -747,7 +747,7 @@ public:
                 // 有效激光点
                 if (rangeMat.at<float>(i,j) != FLT_MAX)
                 {
-                    // 记录激光点对应的Horizon_SCAN方向上的索引
+                    // 记录激光点对应的Horizon_SCAN方向上的列索引,范围[0,Horizon_SCAN]; 但列的下标是全局一维化之后的
                     cloudInfo.pointColInd[count] = j;
                     // 激光点距离
                     cloudInfo.pointRange[count] = rangeMat.at<float>(i,j);
